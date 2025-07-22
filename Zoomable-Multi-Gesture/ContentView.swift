@@ -3,27 +3,40 @@ import SwiftUI
 struct ContentView: View {
     @Namespace private var imageNamespace
     @State private var showDetail = false
-    @State private var animating = false
+    @State private var selectedIndex = 0
+
+    let images = ["p1", "p2", "p3", "p4"]
 
     var body: some View {
         ZStack {
             if !showDetail {
-                VStack {
-                    Spacer()
-                    Image("p1")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 150)
-                        .matchedGeometryEffect(id: "mainImage", in: imageNamespace)
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.83)) {
-                                showDetail = true
-                            }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(images.indices, id: \.self) { idx in
+                            Image(images[idx])
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 150, height: 120)
+                                .cornerRadius(16)
+                                .shadow(radius: 3)
+                                .matchedGeometryEffect(id: "mainImage\(idx)", in: imageNamespace)
+                                .onTapGesture {
+                                    selectedIndex = idx
+                                    withAnimation(.spring(response: 0.45, dampingFraction: 0.83)) {
+                                        showDetail = true
+                                    }
+                                }
                         }
-                    Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 100)
                 }
             } else {
-                ImageDetailViewUIKit(namespace: imageNamespace) {
+                ImageDetailPagerView(
+                    images: images,
+                    initialIndex: selectedIndex,
+                    namespace: imageNamespace
+                ) {
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.83)) {
                         showDetail = false
                     }
@@ -34,8 +47,53 @@ struct ContentView: View {
     }
 }
 
+// MARK: - 풀스크린 페이징 디테일 뷰
+
+struct ImageDetailPagerView: View {
+    let images: [String]
+    let initialIndex: Int
+    let namespace: Namespace.ID
+    var onDismiss: () -> Void
+
+    @State private var selection: Int
+
+    init(images: [String], initialIndex: Int, namespace: Namespace.ID, onDismiss: @escaping () -> Void) {
+        self.images = images
+        self.initialIndex = initialIndex
+        self.namespace = namespace
+        self.onDismiss = onDismiss
+        _selection = State(initialValue: initialIndex)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            TabView(selection: $selection) {
+                ForEach(images.indices, id: \.self) { idx in
+                    ImageDetailViewUIKit(
+                        imageName: images[idx],
+                        tag: idx,
+                        namespace: namespace,
+                        onDismiss: onDismiss
+                    )
+                    .tag(idx)
+                }
+            }
+            .disabled(true)
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+            .ignoresSafeArea()
+            .background(Color.black.ignoresSafeArea())
+        }
+        .transition(.identity)
+        .statusBarHidden(true)
+    }
+}
+
+// MARK: - 한 장의 풀스크린 확대뷰(핀치/드래그/복귀/엣지보정 포함)
+
 struct ImageDetailViewUIKit: View {
-    var namespace: Namespace.ID
+    let imageName: String
+    let tag: Int
+    let namespace: Namespace.ID
     var onDismiss: () -> Void
 
     @State private var offset: CGSize = .zero
@@ -50,10 +108,10 @@ struct ImageDetailViewUIKit: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                Image("p1")
+                Image(imageName)
                     .resizable()
                     .scaledToFit()
-                    .matchedGeometryEffect(id: "mainImage", in: namespace)
+                    .matchedGeometryEffect(id: "mainImage\(tag)", in: namespace)
                     .frame(width: size.width, height: size.height)
                     .scaleEffect(scale)
                     .offset(offset)
@@ -66,9 +124,6 @@ struct ImageDetailViewUIKit: View {
                         }
                     )
                     .onAppear { parentSize = size }
-                    .onChange(of: scale) {
-                        // onChange에서는 dismiss 처리 제거
-                    }
 
                 UIKitManipulationView(
                     offset: $offset,
@@ -83,9 +138,10 @@ struct ImageDetailViewUIKit: View {
             }
         }
         .transition(.identity)
-        .statusBarHidden(true)
     }
 }
+
+// MARK: - UIKitManipulationView (수정 필요 없음: 기존 코드 활용)
 
 struct UIKitManipulationView: UIViewRepresentable {
     @Binding var offset: CGSize
@@ -145,7 +201,7 @@ struct UIKitManipulationView: UIViewRepresentable {
                 offset.wrappedValue = CGSize(width: lastOffset.width + translation.x, height: lastOffset.height + translation.y)
             case .ended, .cancelled:
                 lastOffset = offset.wrappedValue
-                if lastOffset.height > 130 {
+                if abs(lastOffset.height) > 130 {
                     onDismiss()
                 } else {
                     // 제스처가 끝났을 때 여백 조정
@@ -158,7 +214,7 @@ struct UIKitManipulationView: UIViewRepresentable {
         @objc func handlePinch(_ sender: UIPinchGestureRecognizer) {
             switch sender.state {
             case .began, .changed:
-                let newScale = max(0.5, min(lastScale * sender.scale, 3.0))
+                let newScale = max(0.7, min(lastScale * sender.scale, 3.0))
                 scale.wrappedValue = newScale
             case .ended, .cancelled:
                 if scale.wrappedValue <= 0.7 {
@@ -201,31 +257,26 @@ struct UIKitManipulationView: UIViewRepresentable {
             
             // X축 조정
             if scaledImageWidth > parentSize.width {
-                // 이미지가 화면보다 클 때
                 if newOffset.width > maxOffsetX {
                     newOffset.width = maxOffsetX
                 } else if newOffset.width < -maxOffsetX {
                     newOffset.width = -maxOffsetX
                 }
             } else {
-                // 이미지가 화면보다 작을 때는 중앙 정렬
                 newOffset.width = 0
             }
             
             // Y축 조정
             if scaledImageHeight > parentSize.height {
-                // 이미지가 화면보다 클 때
                 if newOffset.height > maxOffsetY {
                     newOffset.height = maxOffsetY
                 } else if newOffset.height < -maxOffsetY {
                     newOffset.height = -maxOffsetY
                 }
             } else {
-                // 이미지가 화면보다 작을 때는 중앙 정렬
                 newOffset.height = 0
             }
             
-            // 애니메이션으로 오프셋 조정
             if newOffset != offset.wrappedValue {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     offset.wrappedValue = newOffset
