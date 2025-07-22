@@ -76,10 +76,10 @@ struct ImageDetailPagerView: View {
                         onDismiss: onDismiss
                     )
                     .tag(idx)
+                    .padding(.horizontal)
                 }
             }
-            .disabled(true)
-            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .always))
+            .tabViewStyle(.page)
             .ignoresSafeArea()
             .background(Color.black.ignoresSafeArea())
         }
