@@ -10,7 +10,7 @@ struct ContentView: View {
             if !showDetail {
                 VStack {
                     Spacer()
-                    Image("Pic 3")
+                    Image("p1")
                         .resizable()
                         .scaledToFit()
                         .frame(width: 150)
@@ -42,8 +42,6 @@ struct ImageDetailViewUIKit: View {
     @State private var scale: CGFloat = 1.0
     @State private var parentSize: CGSize = .zero
     @State private var imageSize: CGSize = .zero
-    @State private var opacity: CGFloat = 1
-    @State private var isPinching = false
 
     var body: some View {
         GeometryReader { geo in
@@ -51,9 +49,8 @@ struct ImageDetailViewUIKit: View {
 
             ZStack {
                 Color.black.ignoresSafeArea()
-                    .opacity(opacity)
 
-                Image("Pic 3")
+                Image("p1")
                     .resizable()
                     .scaledToFit()
                     .matchedGeometryEffect(id: "mainImage", in: namespace)
@@ -76,7 +73,6 @@ struct ImageDetailViewUIKit: View {
                 UIKitManipulationView(
                     offset: $offset,
                     scale: $scale,
-                    isPinching: $isPinching,
                     parentSize: parentSize,
                     imageSize: imageSize,
                     onDismiss: onDismiss
@@ -84,18 +80,6 @@ struct ImageDetailViewUIKit: View {
                 .frame(width: size.width, height: size.height)
                 .background(Color.clear)
                 .allowsHitTesting(true)
-            }
-            .onChange(of: offset) {
-                guard !isPinching else { return }
-                let opacity = 1 - abs(offset.height / 250)
-                self.opacity = max(0, opacity)
-            }
-            .onChange(of: scale) {
-                guard scale < 1 else {
-                    self.opacity = 1
-                    return
-                }
-                self.opacity = max(0, scale)
             }
         }
         .transition(.identity)
@@ -106,7 +90,6 @@ struct ImageDetailViewUIKit: View {
 struct UIKitManipulationView: UIViewRepresentable {
     @Binding var offset: CGSize
     @Binding var scale: CGFloat
-    @Binding var isPinching: Bool
 
     var parentSize: CGSize
     var imageSize: CGSize
@@ -133,23 +116,21 @@ struct UIKitManipulationView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(offset: $offset, scale: $scale, isPinching: $isPinching, parentSize: parentSize, imageSize: imageSize, onDismiss: onDismiss)
+        Coordinator(offset: $offset, scale: $scale, parentSize: parentSize, imageSize: imageSize, onDismiss: onDismiss)
     }
 
     class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var offset: Binding<CGSize>
         var scale: Binding<CGFloat>
-        var isPinching: Binding<Bool>
         var parentSize: CGSize
         var imageSize: CGSize
         var onDismiss: () -> Void
         private var lastOffset: CGSize = .zero
         private var lastScale: CGFloat = 1.0
 
-        init(offset: Binding<CGSize>, scale: Binding<CGFloat>, isPinching: Binding<Bool>, parentSize: CGSize, imageSize: CGSize, onDismiss: @escaping () -> Void) {
+        init(offset: Binding<CGSize>, scale: Binding<CGFloat>, parentSize: CGSize, imageSize: CGSize, onDismiss: @escaping () -> Void) {
             self.offset = offset
             self.scale = scale
-            self.isPinching = isPinching
             self.parentSize = parentSize
             self.imageSize = imageSize
             self.onDismiss = onDismiss
@@ -177,12 +158,9 @@ struct UIKitManipulationView: UIViewRepresentable {
         @objc func handlePinch(_ sender: UIPinchGestureRecognizer) {
             switch sender.state {
             case .began, .changed:
-                isPinching.wrappedValue = true
                 let newScale = max(0.5, min(lastScale * sender.scale, 3.0))
                 scale.wrappedValue = newScale
             case .ended, .cancelled:
-                isPinching.wrappedValue = false
-
                 if scale.wrappedValue <= 0.7 {
                     // 0.7 이하에서 제스처가 끝났을 때 dismiss
                     DispatchQueue.main.async {
