@@ -195,18 +195,17 @@ struct UIKitManipulationView: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
 
         @objc func handlePan(_ sender: UIPanGestureRecognizer) {
+            // 스케일이 1일 때는 pan 제스처를 무시
+            guard scale.wrappedValue > 1.0 else { return }
+            
             let translation = sender.translation(in: sender.view)
             switch sender.state {
             case .began, .changed:
                 offset.wrappedValue = CGSize(width: lastOffset.width + translation.x, height: lastOffset.height + translation.y)
             case .ended, .cancelled:
                 lastOffset = offset.wrappedValue
-                if abs(lastOffset.height) > 130 {
-                    onDismiss()
-                } else {
-                    // 제스처가 끝났을 때 여백 조정
-                    adjustOffsetIfNeeded()
-                }
+                // 제스처가 끝났을 때 여백 조정
+                adjustOffsetIfNeeded()
             default: break
             }
         }
