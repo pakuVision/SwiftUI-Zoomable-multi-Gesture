@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Combine
 
 struct ContentView: View {
     @Namespace private var imageNamespace
@@ -47,54 +49,125 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 풀스크린 페이징 디테일 뷰
+// MARK: - UIPageViewController를 사용한 페이저 뷰
 
 struct ImageDetailPagerView: View {
     let images: [String]
     let initialIndex: Int
     let namespace: Namespace.ID
     var onDismiss: () -> Void
-
-    @State private var selection: Int
-
-    init(images: [String], initialIndex: Int, namespace: Namespace.ID, onDismiss: @escaping () -> Void) {
-        self.images = images
-        self.initialIndex = initialIndex
-        self.namespace = namespace
-        self.onDismiss = onDismiss
-        _selection = State(initialValue: initialIndex)
-    }
+    
+    @StateObject private var pageManager = PageManager()
 
     var body: some View {
-        GeometryReader { geo in
-            TabView(selection: $selection) {
-                ForEach(images.indices, id: \.self) { idx in
-                    ImageDetailViewUIKit(
-                        imageName: images[idx],
-                        tag: idx,
-                        namespace: namespace,
-                        onDismiss: onDismiss
-                    )
-                    .tag(idx)
-                    .padding(.horizontal)
-                }
-            }
-            .tabViewStyle(.page)
-            .ignoresSafeArea()
-            .background(Color.black.ignoresSafeArea())
-        }
-        .transition(.identity)
+        PageViewController(
+            images: images,
+            initialIndex: initialIndex,
+            namespace: namespace,
+            onDismiss: onDismiss,
+            pageManager: pageManager
+        )
+        .ignoresSafeArea()
         .statusBarHidden(true)
     }
 }
 
-// MARK: - 한 장의 풀스크린 확대뷰(핀치/드래그/복귀/엣지보정 포함)
+// MARK: - PageManager: 페이징 상태 관리
 
-struct ImageDetailViewUIKit: View {
+class PageManager: ObservableObject {
+    @Published var isPagingEnabled = true
+    
+    func updatePagingEnabled(_ enabled: Bool) {
+        isPagingEnabled = enabled
+    }
+}
+
+
+// MARK: - UIPageViewController Wrapper
+
+struct PageViewController: UIViewControllerRepresentable {
+    let images: [String]
+    let initialIndex: Int
+    let namespace: Namespace.ID
+    var onDismiss: () -> Void
+    @ObservedObject var pageManager: PageManager
+    
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let pageVC = UIPageViewController(
+            transitionStyle: .scroll,
+            navigationOrientation: .horizontal,
+            options: [.interPageSpacing: 20]
+        )
+        
+        pageVC.dataSource = context.coordinator
+        pageVC.delegate = context.coordinator
+        
+        // 초기 페이지 설정
+        if let initialVC = context.coordinator.createViewController(at: initialIndex) {
+            pageVC.setViewControllers([initialVC], direction: .forward, animated: false)
+        }
+        
+        // 배경색 설정
+        pageVC.view.backgroundColor = .black
+        
+        return pageVC
+    }
+    
+    func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
+        // 페이징 활성화/비활성화
+        if let scrollView = pageVC.view.subviews.first(where: { $0 is UIScrollView }) as? UIScrollView {
+            scrollView.isScrollEnabled = pageManager.isPagingEnabled
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+        let parent: PageViewController
+        
+        init(_ parent: PageViewController) {
+            self.parent = parent
+        }
+        
+        func createViewController(at index: Int) -> UIViewController? {
+            guard index >= 0 && index < parent.images.count else { return nil }
+            
+            let hostingController = UIHostingController(
+                rootView: ImageDetailView(
+                    imageName: parent.images[index],
+                    tag: index,
+                    namespace: parent.namespace,
+                    onDismiss: parent.onDismiss,
+                    pageManager: parent.pageManager
+                )
+            )
+            hostingController.view.backgroundColor = .black
+            hostingController.view.tag = index  // 인덱스를 태그로 저장
+            return hostingController
+        }
+        
+        func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
+            let currentIndex = viewController.view.tag
+            return createViewController(at: currentIndex - 1)
+        }
+        
+        func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
+            let currentIndex = viewController.view.tag
+            return createViewController(at: currentIndex + 1)
+        }
+    }
+}
+
+// MARK: - 개별 이미지 상세 뷰
+
+struct ImageDetailView: View {
     let imageName: String
     let tag: Int
     let namespace: Namespace.ID
     var onDismiss: () -> Void
+    @ObservedObject var pageManager: PageManager
 
     @State private var offset: CGSize = .zero
     @State private var scale: CGFloat = 1.0
@@ -124,6 +197,10 @@ struct ImageDetailViewUIKit: View {
                         }
                     )
                     .onAppear { parentSize = size }
+                    .onChange(of: scale) { newScale in
+                        // 스케일에 따라 페이징 활성화/비활성화
+                        pageManager.updatePagingEnabled(newScale <= 1.0)
+                    }
 
                 UIKitManipulationView(
                     offset: $offset,
@@ -141,7 +218,7 @@ struct ImageDetailViewUIKit: View {
     }
 }
 
-// MARK: - UIKitManipulationView (수정 필요 없음: 기존 코드 활용)
+// MARK: - UIKitManipulationView (기존과 동일)
 
 struct UIKitManipulationView: UIViewRepresentable {
     @Binding var offset: CGSize
