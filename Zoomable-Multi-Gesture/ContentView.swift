@@ -158,11 +158,15 @@ struct UIKitManipulationView: UIViewRepresentable {
 
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDoubleTap(_:)))
+        
+        doubleTap.numberOfTapsRequired = 2
         pan.delegate = context.coordinator
         pinch.delegate = context.coordinator
 
         view.addGestureRecognizer(pan)
         view.addGestureRecognizer(pinch)
+        view.addGestureRecognizer(doubleTap)
         return view
     }
 
@@ -237,6 +241,16 @@ struct UIKitManipulationView: UIViewRepresentable {
                     adjustOffsetIfNeeded()
                 }
             default: break
+            }
+        }
+        
+        @objc func handleDoubleTap(_ sender: UITapGestureRecognizer) {
+            // 더블탭으로 스케일 1로 원상복귀
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                scale.wrappedValue = 1.0
+                offset.wrappedValue = .zero
+                lastScale = 1.0
+                lastOffset = .zero
             }
         }
         
